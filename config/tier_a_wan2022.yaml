@@ -1,0 +1,123 @@
+# Tier A configuration: reconstruction of the 24-hour synthetic scenario
+# in Wan, Qin, Yu, Yang & Kang (2022), IEEE/CAA JAS, vol.9, no.1, pp.123-134.
+#
+# PROVENANCE NOTE (required by the manuscript's no-fabrication rule):
+#   - Values under `dispatchable_loads`, `pevs`, `wholesale_price_usd_per_kwh`,
+#     `elasticity`, and `weights` are transcribed directly from Table I and
+#     Table II of the source paper (verbatim numbers, source = [TABLE]).
+#   - Values under `non_dispatchable_loads` are NOT published as numbers in
+#     the source paper (only shown as Fig. 4, a stacked area chart, with no
+#     data table). They are therefore APPROXIMATED here with a labeled
+#     synthetic generator (source = [APPROX]) that reproduces the general
+#     shape described in the text (single evening-weighted peak) but is
+#     not a pixel-accurate reconstruction of Fig. 4. This must be reported
+#     as an approximation, not as reproduced source data.
+#   - `network` fields are NOT part of the source paper (Wan et al. has no
+#     network/topology model at all - see paper Section II-B, "ignoring
+#     the power losses"). They are a SAFE-PB-side modeling addition
+#     (source = [SAFE-PB EXTENSION]) needed only to exercise the safety
+#     projection layer, and are clearly out of scope for "reproducing"
+#     Wan et al.'s numbers.
+
+random_seed: 20260908
+time_slots: 24
+delta_t_hours: 1.0
+
+wholesale_price_usd_per_kwh:  # lambda_t, Table II, source = [TABLE]
+  [1.9, 1.8, 1.7, 1.6, 1.6, 1.9, 2.1, 2.2, 2.3, 2.6, 2.9, 3.3,
+   3.4, 3.6, 3.5, 4.4, 4.5, 4.0, 4.0, 3.2, 3.1, 3.6, 3.0, 2.6]
+
+elasticity_xi_t:  # Table II, piecewise by period, source = [TABLE]
+  # hours 1-11: -0.3 ; 12-14: -0.5 ; 15-16: -0.3 ; 17-21: -0.7 ; 22-24: -0.5
+  [-0.3, -0.3, -0.3, -0.3, -0.3, -0.3, -0.3, -0.3, -0.3, -0.3, -0.3,
+   -0.5, -0.5, -0.5,
+   -0.3, -0.3,
+   -0.7, -0.7, -0.7, -0.7, -0.7,
+   -0.5, -0.5, -0.5]
+
+weights:  # source = [TABLE]
+  rho: 0.9
+  q_learning_theta: 0.9
+  q_learning_delta: 0.01
+  q_learning_action_step: 0.1   # price discretized in multiples of 0.1 $/kWh
+
+dispatchable_loads:  # 6 general-dispatchable loads, Table I, source = [TABLE]
+  - {id: Gen1, alpha: 3.0, beta: 5, dr_min_frac: 0.1, dr_max_frac: 0.5}
+  - {id: Gen2, alpha: 4.5, beta: 5, dr_min_frac: 0.1, dr_max_frac: 0.5}
+  - {id: Gen3, alpha: 5.0, beta: 5, dr_min_frac: 0.1, dr_max_frac: 0.5}
+  - {id: Gen4, alpha: 4.0, beta: 5, dr_min_frac: 0.1, dr_max_frac: 0.5}
+  - {id: Gen5, alpha: 5.5, beta: 5, dr_min_frac: 0.1, dr_max_frac: 0.5}
+  - {id: Gen6, alpha: 6.0, beta: 5, dr_min_frac: 0.1, dr_max_frac: 0.5}
+  # e_G_{n,t} (hourly energy demand, kWh) is NOT tabulated numerically in the
+  # source paper either (only Fig. 5(a)); approximated, source = [APPROX].
+
+pevs:  # 4 PEVs, Table I, source = [TABLE]
+  - {id: PEV1, alpha: 3.5, beta: 4, C_m: 5, C_M: 98, mu_c: 0.90, mu_d: 0.90, p_rated_kw: 9, E0: 10,   ET: 98}
+  - {id: PEV2, alpha: 3.0, beta: 4, C_m: 5, C_M: 95, mu_c: 0.95, mu_d: 0.95, p_rated_kw: 9, E0: 12.5, ET: 95}
+  - {id: PEV3, alpha: 4.0, beta: 4, C_m: 5, C_M: 95, mu_c: 0.95, mu_d: 0.85, p_rated_kw: 7, E0: 5,    ET: 95}
+  - {id: PEV4, alpha: 4.5, beta: 4, C_m: 5, C_M: 90, mu_c: 0.90, mu_d: 0.80, p_rated_kw: 8, E0: 13,   ET: 90}
+  # eta_n (RP bound multiplier) per paper: 1.5*min(lambda_t) .. 1.5*max(lambda_t)
+
+non_dispatchable_loads:  # 5 loads, source = [APPROX] (see provenance note)
+  count: 5
+  peak_kwh_range: [30, 60]     # per-load peak, loosely consistent with Fig. 4's ~200 kWh stacked total
+  evening_peak_hour: 19
+  morning_peak_hour: 9
+
+price_bounds:
+  eta_min_multiplier: 1.5   # eta_lower = 1.5 * min(lambda_t)  [paper: applies to PEVs; extended here to all loads]
+  eta_max_multiplier: 1.5   # eta_upper = 1.5 * max(lambda_t)
+
+# ---- SAFE-PB-side extensions, source = [SAFE-PB EXTENSION], not in Wan et al. ----
+battery:
+  enabled_fraction_of_households: 0.3
+  capacity_kwh: 13.5
+  p_max_kw: 5.0
+  eta_c: 0.95
+  eta_d: 0.95
+  degradation_usd_per_kwh_throughput: 0.02
+
+pv:
+  enabled_fraction_of_households: 0.4
+  peak_kw: 5.0
+  # synthetic clear-sky-like bell curve, source = [APPROX], NOT a measured irradiance trace
+
+network:
+  feeder: "IEEE 33-bus (Baran & Wu), via pandapower.networks.case33bw()"
+  source: "[PUBLIC DATASET] pandapower built-in test network, real published feeder parameters"
+  # Single authoritative calibration used by environments, scripts, and tests.
+  base_scale: 0.35
+  calibration_candidates: [0.50, 0.45, 0.40, 0.35, 0.30]
+  exogenous_headroom_target_pu: 0.96
+  household_to_bus: "each of the 15 Wan-et-al loads + battery/PV households is assigned to one of the 32 non-slack buses (round-robin); household kW is scaled by `homes_per_bus` and ADDED ON TOP of case33bw's own native per-bus loads (not a replacement), so the feeder stays realistically loaded"
+  homes_per_bus: 1
+  voltage_pu_min: 0.95
+  voltage_pu_max: 1.05
+  # CALIBRATION RULE: run scripts/run_network_calibration.py and choose the
+  # largest candidate whose exogenous-only worst-hour AC minimum is at least
+  # exogenous_headroom_target_pu. The retained V15 run selected 0.35 and
+  # reported 0.9618 p.u.; V16 requires regeneration before treating that
+  # historical value as current evidence.
+  # Historical feeder finding:
+  # case33bw's own native full loading ALREADY produces min vm_pu ~ 0.90-0.91,
+  # i.e. below the 0.95 ANSI-style band, even with zero added household load
+  # (homes_per_bus=0). This is a genuine property of this standard IEEE
+  # test feeder at full nominal loading, not an artifact of our scaling.
+  # homes_per_bus=1 (no amplification) is therefore already sufficient to
+  # exercise the safety layer meaningfully; higher multipliers make the
+  # violation deeper but do not change the qualitative finding.
+  # SEPARATE DATA LIMITATION: case33bw's line thermal ratings (max_i_ka)
+  # are set to an unrealistic 99999 in this pandapower build, so
+  # line/transformer LOADING (%) is not a meaningful constraint here --
+  # only the voltage constraint is meaningfully exercised. Report this
+  # limitation rather than a fabricated thermal-loading claim.
+
+ieee123_bus:
+  status: "[TO OBTAIN]"
+  note: >
+    Not available as a pandapower built-in network in this environment and
+    not fetchable here (no general internet access beyond package
+    registries). A machine-readable IEEE 123-bus case (e.g. an OpenDSS or
+    MATPOWER file) would need to be supplied by the user or pulled from a
+    permitted source before Tier B2 can run. Until then, B2 results must
+    remain [TO COMPUTE], not estimated from B1.
